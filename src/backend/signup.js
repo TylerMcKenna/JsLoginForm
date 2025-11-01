@@ -1,18 +1,119 @@
 import express from 'express';
 import path from 'path';
 import bodyParser from 'body-parser';
+import argon2 from 'argon2';
+import { encrypt, decrypt } from 'node-encryption';
+import sqlite3 from 'sqlite3';
 
 const app = express();
 const PORT = 8080;
 
 app.use(bodyParser.urlencoded());
 
+// At least 12 characters, one lowercase, one uppercase, one number, one special character
+const regEx = new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{12,}$');
+
+// Key for encrypting/decrypting email
+const encryptionKey = '61defe22ed4f30efea5dcb5e386fae95ed756ea686b3f6efdd4c8983c4cde1d1';
+
+// Initialize sqlite3 database
+const db = new sqlite3.Database(path.join(import.meta.dirname, '..', 'database', 'users.db'));
+db.serialize(() => {
+    db.run('CREATE TABLE IF NOT EXISTS users ( email VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, password VARCHAR NOT NULL )')
+});
+
+
 app.get('/', (req, res) => {
+    res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'mainpage.html'));
+});
+
+app.get('/signin', (req, res) => {
+    res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'signin.html'));
+});
+
+app.get('/signup', (req, res) => {
     res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'signup.html'));
 });
 
-app.post('/signupForm', (req, res) => {
-    res.send(req.body.passwordRepeat);
+
+
+
+
+
+app.post('/signupForm', async (req, res) => {
+    if (!req.body) {
+        res.sendStatus(400).send('Missing some or all fields');
+    }
+    
+    for (const element in req.body) {
+        if (!req.body[element]) {
+            res.sendStatus(400).send('Missing some or all fields');
+        }
+    }``
+    
+    const email = req.body.email;
+    const name = encrypt(req.body.name, encryptionKey);
+    const password = req.body.password;
+    const passwordRepeat = req.body.passwordRepeat;
+    
+    if (!(password === passwordRepeat)) {
+        res.sendStatus(400).send('Passwords do not match');
+    }
+    
+    if (!regEx.test(password)) {
+        res.sendStatus(400).send('Password does not meet the requirements');
+    }
+    
+    let hashedPass;
+    try {
+        hashedPass = await argon2.hash(password);
+    } catch (error) {
+        console.log(error);
+        res.sendStatus(500);
+    }
+    
+    db.serialize(() => {
+        db.run('INSERT INTO users (email, name, password) VALUES (?,?,?)', email, name, hashedPass);
+        res.sendStatus(201);
+    });
+});
+
+app.post('/signinForm', async (req, res) => {
+    if (!req.body) {
+        res.sendStatus(400).send('Missing some or all fields');
+    }
+    
+    for (const element in req.body) {
+        if (!req.body[element]) {
+            res.sendStatus(400).send('Missing some or all fields');
+        }
+    }
+
+    // const email = encrypt(req.body.email, encryptionKey);
+    const email = req.body.email;
+    const password = req.body.password;
+
+    let hash;
+    try {
+        hash = await argon2.hash(password);
+    } catch (error) {
+        console.log(error);
+        res.sendStatus(500);
+    }
+
+    db.serialize(() => {
+        db.get('SELECT * FROM users WHERE email = ?', email, (error, row) => {
+            if (error) {
+                console.log(error);
+                res.sendStatus(500);
+            }
+            if (row) {
+                res.send(`User found and name decrypted: ${decrypt(row['name'],encryptionKey).toString()}`);
+            } else {
+                res.send('User not found!')
+            }
+        });
+    });
 });
 
 app.listen(PORT, () => console.log(`server is listening on port ${PORT}`));
