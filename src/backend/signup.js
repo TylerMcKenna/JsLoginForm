@@ -42,12 +42,12 @@ app.get('/signup', (req, res) => {
 
 app.post('/signupForm', async (req, res) => {
     if (!req.body) {
-        res.sendStatus(400).send('Missing some or all fields');
+        res.status(400).send('Missing some or all fields');
     }
     
     for (const element in req.body) {
         if (!req.body[element]) {
-            res.sendStatus(400).send('Missing some or all fields');
+            res.status(400).send('Missing some or all fields');
         }
     }``
     
@@ -57,11 +57,11 @@ app.post('/signupForm', async (req, res) => {
     const passwordRepeat = req.body.passwordRepeat;
     
     if (!(password === passwordRepeat)) {
-        res.sendStatus(400).send('Passwords do not match');
+        res.status(400).send('Passwords do not match');
     }
     
     if (!regEx.test(password)) {
-        res.sendStatus(400).send('Password does not meet the requirements');
+        res.status(400).send('Password does not meet the requirements');
     }
     
     let hashedPass;
@@ -80,37 +80,39 @@ app.post('/signupForm', async (req, res) => {
 
 app.post('/signinForm', async (req, res) => {
     if (!req.body) {
-        res.sendStatus(400).send('Missing some or all fields');
+        res.status(400).send('Missing some or all fields');
     }
     
     for (const element in req.body) {
         if (!req.body[element]) {
-            res.sendStatus(400).send('Missing some or all fields');
+            res.status(400).send('Missing some or all fields');
         }
     }
 
-    // const email = encrypt(req.body.email, encryptionKey);
     const email = req.body.email;
     const password = req.body.password;
 
-    let hash;
-    try {
-        hash = await argon2.hash(password);
-    } catch (error) {
-        console.log(error);
-        res.sendStatus(500);
-    }
-
     db.serialize(() => {
-        db.get('SELECT * FROM users WHERE email = ?', email, (error, row) => {
+        db.get('SELECT * FROM users WHERE email = ?', email, async (error, row) => {
             if (error) {
                 console.log(error);
                 res.sendStatus(500);
             }
-            if (row) {
-                res.send(`User found and name decrypted: ${decrypt(row['name'],encryptionKey).toString()}`);
-            } else {
-                res.send('User not found!')
+
+            if (!row) {
+            return res.status(401).send('Invalid login!');
+        }
+
+            try {
+                const valid = await argon2.verify(row.password, password);
+                if (valid) {
+                    res.send(`User found and name decrypted: ${decrypt(row.name, encryptionKey).toString()}`);
+                } else {
+                    res.status(401).send('Invalid login!');
+                }
+            } catch (error) {
+                console.error(error);
+                res.sendStatus(500);
             }
         });
     });
