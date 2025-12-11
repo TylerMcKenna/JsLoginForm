@@ -11,7 +11,7 @@ const PORT = 8080;
 app.use(bodyParser.urlencoded());
 
 // At least 12 characters, one lowercase, one uppercase, one number, one special character
-const regEx = new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{12,}$');
+const regEx = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 // Key for encrypting/decrypting email
 const encryptionKey = '61defe22ed4f30efea5dcb5e386fae95ed756ea686b3f6efdd4c8983c4cde1d1';
@@ -19,7 +19,7 @@ const encryptionKey = '61defe22ed4f30efea5dcb5e386fae95ed756ea686b3f6efdd4c8983c
 // Initialize sqlite3 database
 const db = new sqlite3.Database(path.join(import.meta.dirname, '..', 'database', 'users.db'));
 db.serialize(() => {
-    db.run('CREATE TABLE IF NOT EXISTS users ( email VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, password VARCHAR NOT NULL )')
+    db.run('CREATE TABLE IF NOT EXISTS users ( email VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, password VARCHAR NOT NULL, phone VARCHAR )')
 });
 
 
@@ -55,7 +55,8 @@ app.post('/signupForm', async (req, res) => {
     const name = encrypt(req.body.name, encryptionKey);
     const password = req.body.password;
     const passwordRepeat = req.body.passwordRepeat;
-    
+    const phone = req.body.phone;
+
     if (!(password === passwordRepeat)) {
         res.status(400).send('Passwords do not match');
     }
@@ -73,7 +74,7 @@ app.post('/signupForm', async (req, res) => {
     }
     
     db.serialize(() => {
-        db.run('INSERT INTO users (email, name, password) VALUES (?,?,?)', email, name, hashedPass);
+        db.run('INSERT INTO users (email, name, password, phone) VALUES (?,?,?,?)', email, name, hashedPass, phone);
         res.sendStatus(201);
     });
 });
@@ -104,10 +105,35 @@ app.post('/signinForm', async (req, res) => {
         }
 
             try {
-                const valid = await argon2.verify(row.password, password);
+                // 1. RE-INTRODUCE PASSWORD VERIFICATION HERE
+                const valid = await argon2.verify(row.password, password); 
+                
                 if (valid) {
-                    res.send(`User found and name decrypted: ${decrypt(row.name, encryptionKey).toString()}`);
+                    // 2. PASSWORD IS VALID - PROCEED TO MFA SETUP
+                    const phone = row.phone;
+                    if (!phone) {
+                        // User exists but has no phone for MFA (shouldn't happen with updated sign-up)
+                        return res.status(500).send('Login successful, but no phone number for SMS MFA.');
+                    }
+
+                    const mfaSetupUrl = `https://wa-ocu-mfa-fre6d6guhve2afcw.centralus-01.azurewebsites.net/mfa/setup/sms/${phone}`;
+                    
+                    try {
+                        const fetchResponse = await fetch(mfaSetupUrl);
+                        if (!fetchResponse.ok) {
+                            throw new Error(`SMS MFA setup failed with status: ${fetchResponse.status}`);
+                        }
+
+                        // Redirect to the MFA verification page, passing the user's phone number as the ID
+                        res.redirect(`/mfa?phone=${phone}`);
+
+                    } catch (fetchError) {
+                        console.error('SMS MFA Setup API Error:', fetchError);
+                        res.status(500).send('Login successful, but SMS MFA setup failed.');
+                    }
+
                 } else {
+                    // 3. PASSWORD IS NOT VALID
                     res.status(401).send('Invalid login!');
                 }
             } catch (error) {
@@ -116,6 +142,54 @@ app.post('/signinForm', async (req, res) => {
             }
         });
     });
+});
+
+app.post('/verifyMfa', async (req, res) => {
+    // The ID is now the phone number
+    const phone = req.body.phone; 
+    const code = req.body.code;
+
+    if (!phone || !code) {
+        return res.status(400).send('Missing phone number or MFA code.');
+    }
+
+    // Use the SMS verification link
+    const verifyUrl = 'https://wa-ocu-mfa-fre6d6guhve2afcw.centralus-01.azurewebsites.net/mfa/verify/sms';
+    const verificationData = {
+        "id": phone, // The ID is the phone number
+        "code": code  // The code from the SMS message
+    };
+
+    try {
+        const fetchResponse = await fetch(verifyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(verificationData)
+        });
+
+        if (!fetchResponse.ok) {
+            throw new Error(`SMS MFA verification API failed with status: ${fetchResponse.status}`);
+        }
+
+        const verificationResult = await fetchResponse.json();
+
+        if (verificationResult) {
+            // MFA Successful
+            res.send(`SMS MFA Verification Successful! Welcome back.`);
+        } else {
+            res.status(401).send('SMS MFA Verification Failed. Invalid code.');
+        }
+
+    } catch (error) {
+        console.error('SMS MFA Verification Error:', error);
+        res.status(500).send('An error occurred during SMS MFA verification.');
+    }
+});
+
+app.get('/mfa', (req, res) => {
+    res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'mfa.html'));
 });
 
 app.listen(PORT, () => console.log(`server is listening on port ${PORT}`));

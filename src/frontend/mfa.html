@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFA Verification</title>
+</head>
+<body>
+    <h1>Multi-Factor Authentication</h1>
+
+    <p>A verification code has been sent via SMS to the phone number associated with your account.</p>
+
+    <h1>Enter Verification Code</h1>
+    <form action="http://localhost:8080/verifyMfa" method="post">
+        <input type="hidden" name="phone" id="user-phone" value="">
+        
+        <label for="mfa-code">6-Digit Code:</label>
+        <input type="text" name="code" id="mfa-code" required maxlength="6" pattern="\d{6}">
+
+        <button type="submit">Verify</button>
+    </form>
+
+    <script>
+        // Get the phone number from the URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const phone = urlParams.get('phone');
+
+        // Set the phone number in the hidden form field
+        document.getElementById('user-phone').value = phone;
+    </script>
+</body>
+</html>
