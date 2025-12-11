@@ -35,9 +35,13 @@ app.get('/signup', (req, res) => {
     res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'signup.html'));
 });
 
+app.get('/forgotPassword', (req, res) => {
+    res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'forgotpassword.html'));
+});
 
-
-
+app.get('/resetConfirmation', (req, res) => {
+    res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'resetconfirmation.html'));
+});
 
 
 app.post('/signupForm', async (req, res) => {
@@ -105,14 +109,11 @@ app.post('/signinForm', async (req, res) => {
         }
 
             try {
-                // 1. RE-INTRODUCE PASSWORD VERIFICATION HERE
                 const valid = await argon2.verify(row.password, password); 
                 
                 if (valid) {
-                    // 2. PASSWORD IS VALID - PROCEED TO MFA SETUP
                     const phone = row.phone;
                     if (!phone) {
-                        // User exists but has no phone for MFA (shouldn't happen with updated sign-up)
                         return res.status(500).send('Login successful, but no phone number for SMS MFA.');
                     }
 
@@ -124,7 +125,6 @@ app.post('/signinForm', async (req, res) => {
                             throw new Error(`SMS MFA setup failed with status: ${fetchResponse.status}`);
                         }
 
-                        // Redirect to the MFA verification page, passing the user's phone number as the ID
                         res.redirect(`/mfa?phone=${phone}`);
 
                     } catch (fetchError) {
@@ -133,7 +133,6 @@ app.post('/signinForm', async (req, res) => {
                     }
 
                 } else {
-                    // 3. PASSWORD IS NOT VALID
                     res.status(401).send('Invalid login!');
                 }
             } catch (error) {
@@ -145,7 +144,6 @@ app.post('/signinForm', async (req, res) => {
 });
 
 app.post('/verifyMfa', async (req, res) => {
-    // The ID is now the phone number
     const phone = req.body.phone; 
     const code = req.body.code;
 
@@ -153,11 +151,10 @@ app.post('/verifyMfa', async (req, res) => {
         return res.status(400).send('Missing phone number or MFA code.');
     }
 
-    // Use the SMS verification link
     const verifyUrl = 'https://wa-ocu-mfa-fre6d6guhve2afcw.centralus-01.azurewebsites.net/mfa/verify/sms';
     const verificationData = {
-        "id": phone, // The ID is the phone number
-        "code": code  // The code from the SMS message
+        "id": phone,
+        "code": code
     };
 
     try {
@@ -176,7 +173,6 @@ app.post('/verifyMfa', async (req, res) => {
         const verificationResult = await fetchResponse.json();
 
         if (verificationResult) {
-            // MFA Successful
             res.send(`SMS MFA Verification Successful! Welcome back.`);
         } else {
             res.status(401).send('SMS MFA Verification Failed. Invalid code.');
@@ -190,6 +186,30 @@ app.post('/verifyMfa', async (req, res) => {
 
 app.get('/mfa', (req, res) => {
     res.sendFile(path.join(import.meta.dirname, '..', 'frontend', 'mfa.html'));
+});
+
+app.post('/forgotPasswordForm', (req, res) => {
+    const email = req.body.email;
+
+    if (!email) {
+        return res.status(400).send('Missing email address.');
+    }
+
+    db.get('SELECT email FROM users WHERE email = ?', email, (error, row) => {
+        if (error) {
+            console.error(error);
+            return res.sendStatus(500);
+        }
+
+        if (row) {
+            const resetLink = `http://localhost:8080/resetPassword?token=fake_token_for_${email}`;
+            console.log(`[PASSWORD RESET]: Simulating email send to ${email} with link: ${resetLink}`);
+        } else {
+            console.log(`[PASSWORD RESET]: Request received for unknown email: ${email}`);
+        }
+
+        res.redirect('/resetConfirmation');
+    });
 });
 
 app.listen(PORT, () => console.log(`server is listening on port ${PORT}`));

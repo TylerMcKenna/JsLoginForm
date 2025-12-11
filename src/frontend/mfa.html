@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MFA Verification</title>
+    <title>Document</title>
+    <link rel="stylesheet" href="https://unpkg.com/mvp.css"> 
 </head>
 <body>
     <h1>Multi-Factor Authentication</h1>
@@ -21,11 +22,9 @@
     </form>
 
     <script>
-        // Get the phone number from the URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const phone = urlParams.get('phone');
 
-        // Set the phone number in the hidden form field
         document.getElementById('user-phone').value = phone;
     </script>
 </body>
